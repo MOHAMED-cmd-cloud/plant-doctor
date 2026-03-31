@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" id="mainHtml">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plant Doctor | طبيب النباتات</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+    <style>
+        :root {
+            --primary: #27ae60;
+            --bg: #f8f9fa;
+            --card-bg: #ffffff;
+            --text-main: #2d3436;
+            --border: #d1d8e0;
+        }
+
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --card-bg: #2d2d2d;
+            --text-main: #f5f5f5;
+            --border: #444;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            transition: 0.3s;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 95%;
+            max-width: 500px;
+            background: var(--card-bg);
+            padding: 25px;
+            border-radius: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .controls {
+            display: flex;
+            justify-content: flex-end; 
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .icon-btn {
+            background: none;
+            border: 1px solid var(--border);
+            padding: 8px 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            color: var(--text-main);
+        }
+
+        h1 { color: var(--primary); text-align: center; margin-bottom: 20px; }
+
+        .daily-tip-box {
+            background: rgba(39, 174, 96, 0.1);
+            border-right: 4px solid var(--primary);
+            padding: 12px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 0.85rem;
+        }
+
+        .upload-area {
+            border: 2px dashed var(--border);
+            border-radius: 20px;
+            padding: 25px;
+            cursor: pointer;
+            text-align: center;
+            display: block;
+            margin-bottom: 20px;
+        }
+
+        #imagePreview { width: 100%; border-radius: 15px; display: none; margin-top: 10px; }
+
+        .btn-main {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 15px;
+            width: 100%;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        #resultArea {
+            margin-top: 25px;
+            display: none;
+            padding: 20px;
+            background: rgba(39, 174, 96, 0.08);
+            border-radius: 15px;
+            border: 1px solid var(--primary);
+        }
+
+        .treat-item { margin-bottom: 15px; font-size: 0.95rem; line-height: 1.6; }
+        .treat-title { color: var(--primary); font-weight: bold; display: block; margin-bottom: 5px; }
+
+        input[type="file"] { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="controls">
+        <button class="icon-btn" onclick="toggleLanguage()" id="langBtn">EN</button>
+        <button class="icon-btn" onclick="toggleTheme()" id="themeBtn">🌙</button>
+    </div>
+
+    <h1 id="title">🌱 طبيب النباتات</h1>
+
+    <div class="daily-tip-box" id="dailyTip">
+        💡 <span id="tipText">تأكد من إضاءة الصورة جيداً للحصول على أدق نتيجة.</span>
+    </div>
+
+    <label class="upload-area" for="fileInput">
+        <div id="placeholder">
+            <span style="font-size: 40px;">📷</span>
+            <p id="uploadLabel">اضغط لاختيار صورة</p>
+        </div>
+        <img id="imagePreview" src="">
+        <input type="file" id="fileInput" accept="image/*">
+    </label>
+
+    <button id="runBtn" class="btn-main" disabled>تحليل الحالة الآن</button>
+
+    <div id="resultArea">
+        <div style="font-size: 1.2rem; margin-bottom: 15px;">
+            <strong id="resTitle">النتيجة:</strong> <span id="statusLabel"></span>
+        </div>
+        <div id="treatmentContent"></div>
+    </div>
+</div>
+
+<script>
+    const URL = "./my_model/"; 
+    let model, currentLang = 'ar', currentTheme = 'light';
+
+    // قاعدة بيانات العلاجات المتغيرة
+    const treatmentsData = {
+        ar: {
+            home: [
+                "محلول صابوني (ملعقة صابون سائل مع لتر ماء) ورش الأوراق للتخلص من الحشرات.",
+                "مزيج من الماء والقليل من الخل الأبيض لرش المناطق المصابة بالفطريات.",
+                "استخدام منقوع الثوم والبصل المصفى كرذاذ طارد للآفات الطبيعية.",
+                "مسح الأوراق بقطنة مبللة بالكحول الطبي المخفف لإزالة الحشرات القشرية."
+            ],
+            chemical: [
+                "مبيد فطري: ابحث عن مادة 'النحاس' أو 'الكبريت' للبقع البيضاء أو السوداء.",
+                "مبيد حشري: ابحث عن مادة 'أبامكتين' (Abamectin) للتخلص من العناكب والمن.",
+                "استخدم مبيد 'نييم' (Neem Oil) وهو خيار عضوي فعال ضد معظم الآفات.",
+                "مبيد 'دلتامثرين' (Deltamethrin) في حال وجود إصابة حشرية قوية."
+            ],
+            urgent: [
+                "اعزل النبتة المصابة عن بقية النباتات فوراً لمنع العدوى.",
+                "قم بتقليم الأوراق شديدة الإصابة وتخلص منها بعيداً عن الحديقة.",
+                "توقف عن تسميد النبتة وهي مريضة حتى تستعيد عافيتها.",
+                "تأكد من جفاف التربة قليلاً قبل الري لمنع انتشار الفطريات."
+            ]
+        },
+        en: {
+            home: [
+                "Soap solution (1 tsp liquid soap with 1L water) to remove insects.",
+                "Mix of water and a bit of white vinegar to spray fungal areas.",
+                "Use filtered garlic and onion soak as a natural pest repellent spray.",
+                "Wipe leaves with diluted rubbing alcohol to remove scale insects."
+            ],
+            chemical: [
+                "Fungicide: Look for 'Copper' or 'Sulfur' for spots.",
+                "Insecticide: Look for 'Abamectin' for mites and aphids.",
+                "Use 'Neem Oil' as an effective organic option against most pests.",
+                "Use 'Deltamethrin' for strong insect infestations."
+            ],
+            urgent: [
+                "Isolate the infected plant immediately to prevent spread.",
+                "Prune heavily infected leaves and dispose of them far from the garden.",
+                "Stop fertilizing the plant while it is sick.",
+                "Ensure soil dries slightly before watering to prevent fungi."
+            ]
+        },
+        fr: {
+            home: [
+                "Solution savonneuse (1 c.à.s de savon + 1L d'eau) pour éliminer les insectes.",
+                "Mélange d'eau et de vinaigre blanc pour les zones fongiques.",
+                "Infusion d'ail et d'oignon filtrée comme répulsif naturel.",
+                "Essuyez les feuilles avec de l'alcool dilué pour les cochenilles."
+            ],
+            chemical: [
+                "Fongicide : Cherchez du 'Cuivre' ou du 'Soufre'.",
+                "Insecticide : Cherchez de l'Abamectine pour les acariens.",
+                "Utilisez l'huile de Neem comme option biologique efficace.",
+                "Deltaméthrine en cas de forte infestation d'insectes."
+            ],
+            urgent: [
+                "Isolez immédiatement la plante pour éviter la contagion.",
+                "Taillez les feuilles infectées et jetez-les loin du jardin.",
+                "Arrêtez de fertiliser la plante pendant sa maladie.",
+                "Laissez sécher la terre avant d'arroser à nouveau."
+            ]
+        }
+    };
+
+    const i18n = {
+        ar: { next: "EN", title: "🌱 طبيب النباتات", upload: "اضغط لاختيار صورة", btn: "تحليل الحالة الآن", res: "النتيجة:", healthy: "سليمة ✅", inhealthy: "مريضة ⚠️", t1: "1. علاج منزلي:", t2: "2. أدوية كيميائية:", t3: "3. نصيحة عاجلة:", h_msg: "نبتتك بصحة جيدة! استمر في رعايتها المعتادة." },
+        en: { next: "FR", title: "🌱 Plant Doctor", upload: "Click to upload", btn: "Analyze Now", res: "Result:", healthy: "Healthy ✅", inhealthy: "Unhealthy ⚠️", t1: "1. Home Remedy:", t2: "2. Chemical Solutions:", t3: "3. Urgent Advice:", h_msg: "Your plant is healthy! Keep it up." },
+        fr: { next: "AR", title: "🌱 Plant Doctor", upload: "Cliquez pour choisir", btn: "Analyser maintenant", res: "Résultat:", healthy: "Saine ✅", inhealthy: "Malade ⚠️", t1: "1. Remède Maison:", t2: "2. Solutions Chimiques:", t3: "3. Conseil Urgent:", h_msg: "Votre plante est saine ! Continuez ainsi." }
+    };
+
+    async function init() {
+        try { model = await tmImage.load(URL + "model.json", URL + "metadata.json"); } 
+        catch(e) { console.error("Model error"); }
+    }
+
+    function toggleLanguage() {
+        if (currentLang === 'ar') currentLang = 'en';
+        else if (currentLang === 'en') currentLang = 'fr';
+        else currentLang = 'ar';
+        document.getElementById('mainHtml').dir = currentLang === 'ar' ? 'rtl' : 'ltr';
+        document.getElementById('langBtn').innerText = i18n[currentLang].next;
+        updateUI();
+    }
+
+    function updateUI() {
+        const lang = i18n[currentLang];
+        document.getElementById('title').innerText = lang.title;
+        document.getElementById('uploadLabel').innerText = lang.upload;
+        document.getElementById('runBtn').innerText = lang.btn;
+        document.getElementById('resTitle').innerText = lang.res;
+    }
+
+    function toggleTheme() {
+        currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+        document.body.setAttribute('data-theme', currentTheme);
+        document.getElementById('themeBtn').innerText = currentTheme === 'light' ? '🌙' : '☀️';
+    }
+
+    const fileInput = document.getElementById('fileInput');
+    const imagePreview = document.getElementById('imagePreview');
+    const runBtn = document.getElementById('runBtn');
+
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                imagePreview.src = ev.target.result;
+                imagePreview.style.display = 'block';
+                document.getElementById('placeholder').style.display = 'none';
+                runBtn.disabled = false;
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+
+    runBtn.addEventListener('click', async () => {
+        runBtn.innerText = "...";
+        const prediction = await model.predict(imagePreview);
+        prediction.sort((a, b) => b.probability - a.probability);
+        const label = prediction[0].className.toLowerCase();
+        
+        const content = document.getElementById('treatmentContent');
+        const lang = i18n[currentLang];
+        const data = treatmentsData[currentLang];
+        document.getElementById('resultArea').style.display = 'block';
+
+        if (label === "healthy") {
+            document.getElementById('statusLabel').innerText = lang.healthy;
+            content.innerHTML = `<div class="treat-item">${lang.h_msg}</div>`;
+        } else {
+            // اختيار عشوائي للنصائح في كل مرة تظهر فيها "مريضة"
+            const randomHome = data.home[Math.floor(Math.random() * data.home.length)];
+            const randomChem = data.chemical[Math.floor(Math.random() * data.chemical.length)];
+            const randomUrgent = data.urgent[Math.floor(Math.random() * data.urgent.length)];
+
+            document.getElementById('statusLabel').innerText = lang.inhealthy;
+            content.innerHTML = `
+                <div class="treat-item"><span class="treat-title">${lang.t1}</span>${randomHome}</div>
+                <div class="treat-item"><span class="treat-title">${lang.t2}</span>${randomChem}</div>
+                <div class="treat-item" style="background: #fff3cd; padding: 10px; border-radius: 8px; color: #856404;">
+                    <span class="treat-title" style="color: #856404;">${lang.t3}</span>${randomUrgent}
+                </div>
+            `;
+        }
+        runBtn.innerText = lang.btn;
+    });
+
+    init();
+</script>
+</body>
+</html>
